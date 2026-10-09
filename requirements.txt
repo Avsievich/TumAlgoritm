@@ -1,0 +1,11 @@
+# Алгоритм. Эти пакеты нужны пакету tumalgoritm.
+numpy>=1.26
+pandas>=2.0
+
+# Автоматизированное рабочее место (пакет arm).
+openpyxl>=3.1
+matplotlib>=3.8
+customtkinter>=5.2
+
+# Запуск тестов.
+pytest>=8.0
