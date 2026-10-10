@@ -15,6 +15,9 @@ from arm.report import (
     SHEET_PDO,
     SHEET_RES_M,
     SHEET_SUMMARY,
+    build_frames,
+    frame_to_tsv,
+    frames_to_copy_text,
     write_report,
 )
 
@@ -72,6 +75,39 @@ def test_report_contains_separated_metrics(tmp_path: Path):
     assert "FDO" in values
     assert any(str(name).startswith("VdDO") for name in values)
     assert any(str(name).startswith("I(") for name in values)
+
+
+def test_frames_to_copy_text_keeps_all_sheets():
+    """Текст для буфера содержит каждый лист и подписи res_M."""
+    from tumalgoritm.pipeline import run_frame
+
+    frame = pd.DataFrame(
+        {
+            "x1": [0, 0, 1, 1, 0, 0, 1, 1],
+            "x2": [0, 1, 0, 1, 0, 1, 0, 1],
+            "y": [0, 0, 0, 0, 1, 1, 1, 1],
+        }
+    )
+    result = run_frame(
+        frame,
+        "y",
+        nadc_x=1,
+        nadc_y=1,
+        min_dominant=2,
+        max_dominant=2,
+        effect_order=1,
+    )
+    frames = build_frames(result)
+    text = frames_to_copy_text(frames)
+    assert f"### {SHEET_SUMMARY}" in text
+    assert f"### {SHEET_PDO}" in text
+    assert f"### {SHEET_RES_M}" in text
+    assert "MDO" in text
+    # Матрица res_M уходит с подписями строк эффектов.
+    res_block = text.split(f"### {SHEET_RES_M}", 1)[1]
+    assert "\t" in res_block
+    single = frame_to_tsv(frames[SHEET_SUMMARY])
+    assert single.splitlines()[0].startswith("Показатель")
 
 
 @pytest.mark.skipif(

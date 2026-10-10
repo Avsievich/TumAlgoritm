@@ -68,6 +68,59 @@ def build_frames(result: AnalysisResult) -> dict[str, pd.DataFrame]:
     }
 
 
+def frame_to_tsv(
+    frame: pd.DataFrame,
+    *,
+    with_index: bool = False,
+) -> str:
+    """Переводит одну таблицу в текст с табуляцией.
+
+    Такой текст вставляется в Excel, Word и блокнот без потери
+    столбцов. Индекс нужен для матрицы res_M: там подписи строк
+    — это имена эффектов.
+
+    Args:
+        frame: лист отчёта.
+        with_index: писать ли подписи строк первым столбцом.
+
+    Returns:
+        Строка TSV с заголовком.
+    """
+    shown = frame.reset_index() if with_index else frame
+    return shown.to_csv(index=False, sep="\t", lineterminator="\n")
+
+
+def frames_to_copy_text(
+    frames: dict[str, pd.DataFrame],
+    *,
+    index_sheets: set[str] | None = None,
+) -> str:
+    """Собирает все листы отчёта в один текст для буфера обмена.
+
+    Перед каждой таблицей ставится заголовок листа. Между листами
+    пустая строка, чтобы блоки было видно в блокноте.
+
+    Args:
+        frames: имя листа и таблица, как в build_frames.
+        index_sheets: листы, у которых в текст идёт индекс строк.
+            По умолчанию — только res_M.
+
+    Returns:
+        Многострочный текст со всеми данными исследования.
+    """
+    need_index = index_sheets if index_sheets is not None else {SHEET_RES_M}
+    parts: list[str] = []
+    for sheet_name, frame in frames.items():
+        parts.append(f"### {sheet_name}")
+        body = frame_to_tsv(
+            frame,
+            with_index=sheet_name in need_index,
+        ).rstrip("\n")
+        parts.append(body)
+        parts.append("")
+    return "\n".join(parts).rstrip() + "\n"
+
+
 def _summary_frame(result: AnalysisResult) -> pd.DataFrame:
     """Скалярные итоги: МДО, ОДО, FDO и уникальная информация."""
     names = result.column_names

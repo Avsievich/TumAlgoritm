@@ -26,7 +26,13 @@ from arm.charts import (
 from arm.export_run import export_run
 from arm.help_guide import GUIDE_TITLE, guide_for, guide_names
 from arm.help_text import BY_NAME, format_help, help_for
-from arm.report import SHEET_RES_M, SHEET_SUMMARY, build_frames
+from arm.report import (
+    SHEET_RES_M,
+    SHEET_SUMMARY,
+    build_frames,
+    frame_to_tsv,
+    frames_to_copy_text,
+)
 from arm.session import (
     apply_range_filter,
     column_overview,
@@ -486,6 +492,23 @@ class App(ctk.CTk):
             width=220,
         )
         self._table_pick.pack(side="left")
+        # Копирование таблиц отдельно от копирования рисунка.
+        self._copy_table_button = ctk.CTkButton(
+            self._picks_host,
+            text="Копировать таблицу",
+            width=150,
+            command=self._copy_result_table,
+            state="disabled",
+        )
+        self._copy_table_button.pack(side="left", padx=(12, 0))
+        self._copy_all_button = ctk.CTkButton(
+            self._picks_host,
+            text="Копировать всё",
+            width=130,
+            command=self._copy_all_results,
+            state="disabled",
+        )
+        self._copy_all_button.pack(side="left", padx=(8, 0))
         self._y_filter_label = ctk.CTkLabel(
             self._picks_host, text="Отчёт по Y"
         )
@@ -510,8 +533,8 @@ class App(ctk.CTk):
         tools.pack(anchor="w", padx=4, pady=2)
         self._copy_chart_button = ctk.CTkButton(
             tools,
-            text="Копировать",
-            width=120,
+            text="Копировать рисунок",
+            width=150,
             command=self._copy_chart,
             state="disabled",
         )
@@ -1011,6 +1034,7 @@ class App(ctk.CTk):
         self._table_pick.configure(values=sheet_names)
         self._table_pick.set(SHEET_SUMMARY)
         self._show_table(SHEET_SUMMARY)
+        self._set_copy_data_enabled(True)
         try:
             plots = save_charts(result, self._preview_dir)
         except Exception as exc:
@@ -1055,6 +1079,7 @@ class App(ctk.CTk):
             default_sheet = SHEET_RANK
         self._table_pick.set(default_sheet)
         self._show_table(default_sheet)
+        self._set_copy_data_enabled(True)
         self._show_scan_charts(self._scan_y_filter)
 
     def _set_scan_layout(self, scan_mode: bool) -> None:
@@ -1193,7 +1218,9 @@ class App(ctk.CTk):
         self._chart_box = box
         self._chart_base = _fit_image_size(image.size, box)
         self._chart_zoom = CHART_ZOOM_DEFAULT
-        self._copy_chart_button.configure(state="normal", text="Копировать")
+        self._copy_chart_button.configure(
+            state="normal", text="Копировать рисунок"
+        )
         self._apply_chart_zoom()
 
     def _apply_chart_zoom(self) -> None:
@@ -1267,7 +1294,103 @@ class App(ctk.CTk):
         self._copy_chart_button.configure(text="Скопировано")
         self.after(
             1500,
-            lambda: self._copy_chart_button.configure(text="Копировать"),
+            lambda: self._copy_chart_button.configure(
+                text="Копировать рисунок"
+            ),
+        )
+
+    def _set_copy_data_enabled(self, enabled: bool) -> None:
+        """Включает кнопки копирования таблиц после появления результата."""
+        state = "normal" if enabled else "disabled"
+        self._copy_table_button.configure(
+            state=state, text="Копировать таблицу"
+        )
+        self._copy_all_button.configure(
+            state=state, text="Копировать всё"
+        )
+
+    def _copy_text_to_clipboard(self, text: str) -> None:
+        """Кладёт текст в буфер обмена окна.
+
+        Args:
+            text: TSV или многолистовый отчёт.
+
+        Raises:
+            OSError: буфер недоступен.
+        """
+        try:
+            self.clipboard_clear()
+            self.clipboard_append(text)
+            # Без update некоторые версии Windows очищают буфер
+            # сразу после выхода из обработчика.
+            self.update_idletasks()
+        except Exception as exc:
+            raise OSError(str(exc)) from exc
+
+    def _frames_for_copy_all(self) -> dict[str, pd.DataFrame]:
+        """Полный набор листов для кнопки «Копировать всё».
+
+        Для обычного расчёта — то, что на экране. Для скана —
+        все выходы без фильтра Y, как в Excel-выгрузке.
+        """
+        if self._y_scan is not None:
+            return build_scan_frames(self._y_scan)
+        return dict(self._result_frames)
+
+    def _copy_result_table(self) -> None:
+        """Копирует текущий лист целиком, не только строки превью."""
+        sheet_name = self._table_pick.get()
+        frame = self._result_frames.get(sheet_name)
+        if frame is None:
+            messagebox.showwarning(
+                "TumAlgoritm",
+                "Нет таблицы для копирования",
+            )
+            return
+        text = frame_to_tsv(
+            frame,
+            with_index=sheet_name == SHEET_RES_M,
+        )
+        try:
+            self._copy_text_to_clipboard(text)
+        except OSError as exc:
+            messagebox.showerror(
+                "TumAlgoritm",
+                f"Не удалось скопировать таблицу: {exc}",
+            )
+            return
+        self._copy_table_button.configure(text="Скопировано")
+        self.after(
+            1500,
+            lambda: self._copy_table_button.configure(
+                text="Копировать таблицу"
+            ),
+        )
+
+    def _copy_all_results(self) -> None:
+        """Копирует все листы результата исследования в буфер."""
+        frames = self._frames_for_copy_all()
+        if not frames:
+            messagebox.showwarning(
+                "TumAlgoritm",
+                "Нет данных результата для копирования",
+            )
+            return
+        text = frames_to_copy_text(frames)
+        try:
+            self._copy_text_to_clipboard(text)
+        except OSError as exc:
+            messagebox.showerror(
+                "TumAlgoritm",
+                f"Не удалось скопировать данные: {exc}",
+            )
+            return
+        self._copy_all_button.configure(text="Скопировано")
+        self.after(
+            1500,
+            lambda: self._copy_all_button.configure(
+                text="Копировать всё"
+            ),
         )
 
     def _on_help_pick(self, name: str) -> None:

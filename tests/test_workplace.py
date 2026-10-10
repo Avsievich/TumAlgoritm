@@ -16,6 +16,7 @@ from arm.gui import (
     image_to_dib,
 )
 from arm.help_text import help_for
+from arm.report import SHEET_SUMMARY
 from arm.session import drop_columns, load_working_table, save_working_csv
 from tumalgoritm.data_io import ROLE_Y, build_dataset
 from tumalgoritm.pipeline import run_frame
@@ -166,6 +167,10 @@ def test_guide_covers_screens_and_export():
     assert "100" in guide_for("Экран «Расчёт»")
     charts = guide_for("Графики")
     assert "Тепловая карта" in charts
+    assert "Копировать рисунок" in charts
+    results_help = guide_for("Экран «Результаты»")
+    assert "Копировать всё" in results_help
+    assert "Копировать таблицу" in results_help
     square = guide_for("График: радарная диаграмма")
     assert "square_radar.png" in square
     assert "ДОЭВД" in square
@@ -248,6 +253,14 @@ def test_window_previews_edits_and_results(tmp_path: Path):
         assert app._chart_box == HEATMAP_VIEW
         assert app._chart_zoom == 1.0
         assert app._copy_chart_button.cget("state") == "normal"
+        assert app._copy_all_button.cget("state") == "normal"
+        assert app._copy_table_button.cget("state") == "normal"
+        copied = app._frames_for_copy_all()
+        assert SHEET_SUMMARY in copied
+        app._copy_all_results()
+        clip = app.clipboard_get()
+        assert "### Summary" in clip
+        assert "MDO" in clip
         base_width = app._chart_size[0]
         app._zoom_chart(CHART_ZOOM_STEP)
         assert app._chart_zoom == pytest.approx(1.0 + CHART_ZOOM_STEP)
